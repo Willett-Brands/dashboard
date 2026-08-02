@@ -31,7 +31,10 @@ async function repoCommits(repo) {
         repo: repo.split('/')[1],
         sha: c.sha.slice(0, 7),
         message: c.commit.message.split('\n')[0],
-        author: c.commit.author?.name ?? 'unknown',
+        // Prefer the linked GitHub account login (consistent across commits/PRs/issues
+        // for filtering) - falls back to the raw git commit author name when GitHub
+        // couldn't match the commit email to an account.
+        person: c.author?.login ?? c.commit.author?.name ?? 'unknown',
         date: c.commit.author?.date,
         url: c.html_url,
     }));
@@ -47,6 +50,7 @@ async function repoIssues(repo) {
             number: i.number,
             title: i.title,
             state: i.state,
+            person: i.user?.login ?? 'unknown',
             labels: i.labels.map((l) => (typeof l === 'string' ? l : l.name)),
             assignees: i.assignees.map((a) => a.login),
             createdAt: i.created_at,
@@ -63,7 +67,7 @@ async function repoPulls(repo) {
         number: p.number,
         title: p.title,
         status: p.merged_at ? 'merged' : p.state === 'closed' ? 'closed' : p.draft ? 'draft' : 'open',
-        author: p.user?.login ?? 'unknown',
+        person: p.user?.login ?? 'unknown',
         createdAt: p.created_at,
         updatedAt: p.updated_at,
         url: p.html_url,

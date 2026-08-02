@@ -30,15 +30,13 @@
   header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1.5rem; }
   h1 { font-size: 22px; font-weight: 600; margin: 0; }
   #updated { font-size: 13px; color: var(--text-muted); }
-  h2 { font-size: 15px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-muted); margin: 0 0 0.75rem; }
-  section { margin-bottom: 2.5rem; }
 
   .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 1.5rem; }
   .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 0.85rem 1rem; }
   .stat .n { font-size: 22px; font-weight: 600; }
   .stat .l { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
 
-  .controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 1.5rem; }
+  .controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 1.25rem; }
   .seg { display: inline-flex; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 2px; }
   .seg button {
     border: none; background: transparent; font-size: 13px; padding: 5px 12px; border-radius: 6px;
@@ -49,6 +47,15 @@
     font-size: 13px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border);
     background: var(--surface); color: var(--text); font-family: inherit;
   }
+
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 1rem; }
+  .tabs button {
+    border: none; background: transparent; font-size: 14px; font-weight: 500; padding: 8px 14px;
+    cursor: pointer; color: var(--text-muted); font-family: inherit; border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  .tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tabs .count { font-weight: 400; color: var(--text-muted); }
 
   .card-list { display: flex; flex-direction: column; gap: 8px; }
   .card {
@@ -94,6 +101,9 @@
       <button data-repo="kaydence">kaydence</button>
       <button data-repo="engagement-hub">engagement-hub</button>
     </div>
+    <select id="person-filter">
+      <option value="all">Everyone</option>
+    </select>
     <select id="timeframe">
       <option value="all">All time</option>
       <option value="1">Today</option>
@@ -102,26 +112,23 @@
     </select>
   </div>
 
-  <section>
-    <h2>Recent commits</h2>
-    <div id="commits" class="card-list"></div>
-  </section>
+  <div class="tabs" id="tabs">
+    <button data-tab="commits" class="active">Commits <span class="count" id="tab-count-commits"></span></button>
+    <button data-tab="pulls">Pull requests <span class="count" id="tab-count-pulls"></span></button>
+    <button data-tab="issues">Issues <span class="count" id="tab-count-issues"></span></button>
+  </div>
 
-  <section>
-    <h2>Pull requests</h2>
-    <div id="pulls" class="card-list"></div>
-  </section>
-
-  <section>
-    <h2>Issues</h2>
-    <div id="issues" class="card-list"></div>
-  </section>
+  <div id="commits" class="card-list"></div>
+  <div id="pulls" class="card-list" style="display:none;"></div>
+  <div id="issues" class="card-list" style="display:none;"></div>
 </div>
 
 <script>
 let DATA = null;
 let repoFilter = 'all';
+let personFilter = 'all';
 let days = 7;
+let activeTab = 'commits';
 
 function timeAgo(iso) {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -148,7 +155,22 @@ function withinTimeframe(iso) {
 }
 
 function applyFilters(items, dateField) {
-  return items.filter((i) => (repoFilter === 'all' || i.repo === repoFilter) && withinTimeframe(i[dateField]));
+  return items.filter((i) =>
+    (repoFilter === 'all' || i.repo === repoFilter) &&
+    (personFilter === 'all' || i.person === personFilter) &&
+    withinTimeframe(i[dateField])
+  );
+}
+
+function populatePersonFilter() {
+  const people = new Set([...DATA.commits, ...DATA.pulls, ...DATA.issues].map((i) => i.person));
+  const select = document.getElementById('person-filter');
+  [...people].sort().forEach((p) => {
+    const opt = document.createElement('option');
+    opt.value = p;
+    opt.textContent = p;
+    select.appendChild(opt);
+  });
 }
 
 function render() {
@@ -163,6 +185,10 @@ function render() {
     <div class="stat"><div class="n">${issues.filter((i) => i.state === 'open').length}</div><div class="l">Open issues</div></div>
   `;
 
+  document.getElementById('tab-count-commits').textContent = `(${commits.length})`;
+  document.getElementById('tab-count-pulls').textContent = `(${pulls.length})`;
+  document.getElementById('tab-count-issues').textContent = `(${issues.length})`;
+
   const commitsEl = document.getElementById('commits');
   commitsEl.innerHTML = commits.length ? commits.map((c) => `
     <a class="card" href="${c.url}" target="_blank" rel="noopener">
@@ -171,12 +197,12 @@ function render() {
         <div class="card-meta">
           <span class="repo-tag">${c.repo}</span>
           <span class="sha">${c.sha}</span>
-          <span>${escapeHtml(c.author)}</span>
+          <span>${escapeHtml(c.person)}</span>
         </div>
       </div>
       <div class="card-meta">${timeAgo(c.date)}</div>
     </a>
-  `).join('') : '<div class="empty">No commits in this range.</div>';
+  `).join('') : '<div class="empty">No commits match these filters.</div>';
 
   const pullsEl = document.getElementById('pulls');
   pullsEl.innerHTML = pulls.length ? pulls.map((p) => `
@@ -186,12 +212,12 @@ function render() {
         <div class="card-meta">
           <span class="repo-tag">${p.repo}</span>
           <span class="status ${p.status}">${p.status}</span>
-          <span>${escapeHtml(p.author)}</span>
+          <span>${escapeHtml(p.person)}</span>
         </div>
       </div>
       <div class="card-meta">${timeAgo(p.updatedAt)}</div>
     </a>
-  `).join('') : '<div class="empty">No pull requests in this range.</div>';
+  `).join('') : '<div class="empty">No pull requests match these filters.</div>';
 
   const issuesEl = document.getElementById('issues');
   issuesEl.innerHTML = issues.length ? issues.map((i) => `
@@ -201,20 +227,40 @@ function render() {
         <div class="card-meta">
           <span class="repo-tag">${i.repo}</span>
           <span class="status ${i.state}">${i.state}</span>
-          ${i.assignees.length ? `<span>${i.assignees.map(escapeHtml).join(', ')}</span>` : '<span>Unassigned</span>'}
+          <span>filed by ${escapeHtml(i.person)}</span>
+          ${i.assignees.length ? `<span>assigned: ${i.assignees.map(escapeHtml).join(', ')}</span>` : '<span>unassigned</span>'}
         </div>
         ${i.labels.length ? `<div class="labels">${i.labels.map((l) => `<span class="pill">${escapeHtml(l)}</span>`).join('')}</div>` : ''}
       </div>
       <div class="card-meta">${timeAgo(i.updatedAt)}</div>
     </a>
-  `).join('') : '<div class="empty">No issues in this range.</div>';
+  `).join('') : '<div class="empty">No issues match these filters.</div>';
 }
+
+function setTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+  ['commits', 'pulls', 'issues'].forEach((t) => {
+    document.getElementById(t).style.display = t === tab ? 'flex' : 'none';
+  });
+}
+
+document.getElementById('tabs').addEventListener('click', (e) => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  setTab(btn.dataset.tab);
+});
 
 document.getElementById('repo-filter').addEventListener('click', (e) => {
   const btn = e.target.closest('button');
   if (!btn) return;
   repoFilter = btn.dataset.repo;
   document.querySelectorAll('#repo-filter button').forEach((b) => b.classList.toggle('active', b === btn));
+  render();
+});
+
+document.getElementById('person-filter').addEventListener('change', (e) => {
+  personFilter = e.target.value;
   render();
 });
 
@@ -228,7 +274,9 @@ fetch(`./data.json?t=${Date.now()}`, { cache: 'no-store' })
   .then((data) => {
     DATA = data;
     document.getElementById('updated').textContent = `Updated ${timeAgo(data.generatedAt)}`;
+    populatePersonFilter();
     render();
+    setTab('commits');
   })
   .catch((err) => {
     document.getElementById('updated').textContent = 'Failed to load data.json';
