@@ -107,36 +107,23 @@ function timeAgo(iso) {
   return `${Math.max(1, Math.round(val))}${units[i][1]} ago`;
 }
 
-// Subsequence fuzzy match: every query char must appear in order in the
-// target (not necessarily adjacent). Score rewards consecutive runs, so
-// "pts" scores higher against "Points System" than against "Player Tools".
-// Returns -1 when the query isn't a subsequence at all (no match).
-function fuzzyScore(q, target) {
-  if (!q) return 0;
-  const t = target.toLowerCase();
-  let qi = 0, score = 0, streak = 0;
-  for (let ti = 0; ti < t.length && qi < q.length; ti++) {
-    if (t[ti] === q[qi]) {
-      qi++;
-      streak++;
-      score += streak;
-    } else {
-      streak = 0;
-    }
-  }
-  return qi === q.length ? score : -1;
-}
-
+// Plain case-insensitive substring match against title and content - a doc
+// only shows up if the search term literally appears somewhere in it.
+// (A fuzzy subsequence match was tried first, but against multi-KB doc
+// content almost any short query's letters appear "in order" somewhere
+// purely by chance, so it never actually filtered anything out.)
 function matchDocs(docs) {
   if (!query) return docs;
 
   const q = query.toLowerCase();
   return docs
     .map((d) => {
-      const titleScore = fuzzyScore(q, d.title);
-      const contentScore = fuzzyScore(q, d.content);
-      const score = (titleScore >= 0 ? titleScore * 100 : 0) + (contentScore >= 0 ? contentScore : 0);
-      return { doc: d, score, matched: titleScore >= 0 || contentScore >= 0 };
+      const titleIdx = d.title.toLowerCase().indexOf(q);
+      const contentIdx = d.content.toLowerCase().indexOf(q);
+      const matched = titleIdx >= 0 || contentIdx >= 0;
+      // Title matches rank above content matches; earlier matches rank higher within each.
+      const score = titleIdx >= 0 ? 100000 - titleIdx : 1000 - contentIdx;
+      return { doc: d, score, matched };
     })
     .filter((r) => r.matched)
     .sort((a, b) => b.score - a.score)
