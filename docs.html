@@ -41,10 +41,17 @@
   .layout { display: grid; grid-template-columns: 260px 1fr; gap: 20px; align-items: start; }
   @media (max-width: 720px) { .layout { grid-template-columns: 1fr; } }
 
+  .search-wrap { position: relative; margin-bottom: 8px; }
   .search {
-    width: 100%; font-size: 13px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border);
-    background: var(--surface); color: var(--text); font-family: inherit; margin-bottom: 8px;
+    width: 100%; font-size: 13px; padding: 7px 28px 7px 10px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); font-family: inherit;
   }
+  #search-clear {
+    display: none; position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+    border: none; background: transparent; color: var(--text-muted); font-size: 16px; line-height: 1;
+    cursor: pointer; padding: 4px 6px; border-radius: 6px;
+  }
+  #search-clear:hover { background: var(--bg); color: var(--text); }
 
   .doc-list { display: flex; flex-direction: column; gap: 4px; }
   .doc-list button {
@@ -81,7 +88,10 @@
   <div class="tabs" id="tabs"></div>
   <div class="layout">
     <div>
-      <input type="text" class="search" id="search" placeholder="Search docs...">
+      <div class="search-wrap">
+        <input type="text" class="search" id="search" placeholder="Search docs...">
+        <button type="button" id="search-clear" aria-label="Clear search">&times;</button>
+      </div>
       <div class="doc-list" id="doc-list"></div>
     </div>
     <div class="doc-content" id="doc-content"><div class="empty">Select a document.</div></div>
@@ -204,8 +214,9 @@ document.getElementById('doc-list').addEventListener('click', (e) => {
   if (btn) selectDoc(btn.dataset.path);
 });
 
-document.getElementById('search').addEventListener('input', (e) => {
-  query = e.target.value.trim();
+function updateQuery(value) {
+  query = value.trim();
+  document.getElementById('search-clear').style.display = query ? 'block' : 'none';
   renderList();
   // Auto-select the top match so the content pane stays useful while typing.
   const docs = matchDocs(DOCS.filter((d) => d.repo === activeRepo));
@@ -214,6 +225,15 @@ document.getElementById('search').addEventListener('input', (e) => {
     renderContent();
     renderList();
   }
+}
+
+document.getElementById('search').addEventListener('input', (e) => updateQuery(e.target.value));
+
+document.getElementById('search-clear').addEventListener('click', () => {
+  const input = document.getElementById('search');
+  input.value = '';
+  updateQuery('');
+  input.focus();
 });
 
 fetch(`./docs.json?t=${Date.now()}`, { cache: 'no-store' })
