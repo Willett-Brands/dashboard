@@ -14,6 +14,10 @@
     --accent: #4f46e5;
     --label-bg: #eef0ff;
     --label-text: #3730a3;
+    --green-bg: #e8f7ee; --green-text: #157a3d;
+    --purple-bg: #f2ebfe; --purple-text: #6b21a8;
+    --gray-bg: #f1f2f4; --gray-text: #4b5563;
+    --red-bg: #fdecec; --red-text: #b42318;
   }
   * { box-sizing: border-box; }
   body {
@@ -23,11 +27,29 @@
     color: var(--text);
   }
   .wrap { max-width: 960px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
-  header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 2rem; }
+  header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1.5rem; }
   h1 { font-size: 22px; font-weight: 600; margin: 0; }
   #updated { font-size: 13px; color: var(--text-muted); }
   h2 { font-size: 15px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-muted); margin: 0 0 0.75rem; }
   section { margin-bottom: 2.5rem; }
+
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 1.5rem; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 0.85rem 1rem; }
+  .stat .n { font-size: 22px; font-weight: 600; }
+  .stat .l { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+  .controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 1.5rem; }
+  .seg { display: inline-flex; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 2px; }
+  .seg button {
+    border: none; background: transparent; font-size: 13px; padding: 5px 12px; border-radius: 6px;
+    cursor: pointer; color: var(--text-muted); font-family: inherit;
+  }
+  .seg button.active { background: var(--accent); color: #fff; }
+  select {
+    font-size: 13px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); font-family: inherit;
+  }
+
   .card-list { display: flex; flex-direction: column; gap: 8px; }
   .card {
     background: var(--surface);
@@ -48,7 +70,12 @@
   .repo-tag { font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 999px; background: var(--label-bg); color: var(--label-text); white-space: nowrap; }
   .sha { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-muted); }
   .labels { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
-  .pill { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: #f1f2f4; color: #4b5563; }
+  .pill { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--gray-bg); color: var(--gray-text); }
+  .status { font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+  .status.open { background: var(--green-bg); color: var(--green-text); }
+  .status.merged { background: var(--purple-bg); color: var(--purple-text); }
+  .status.closed { background: var(--red-bg); color: var(--red-text); }
+  .status.draft { background: var(--gray-bg); color: var(--gray-text); }
   .empty { color: var(--text-muted); font-size: 14px; padding: 1rem; }
 </style>
 </head>
@@ -59,18 +86,43 @@
     <span id="updated"></span>
   </header>
 
+  <div class="stats" id="stats"></div>
+
+  <div class="controls">
+    <div class="seg" id="repo-filter">
+      <button data-repo="all" class="active">All repos</button>
+      <button data-repo="kaydence">kaydence</button>
+      <button data-repo="engagement-hub">engagement-hub</button>
+    </div>
+    <select id="timeframe">
+      <option value="all">All time</option>
+      <option value="1">Today</option>
+      <option value="7" selected>Last 7 days</option>
+      <option value="30">Last 30 days</option>
+    </select>
+  </div>
+
   <section>
     <h2>Recent commits</h2>
     <div id="commits" class="card-list"></div>
   </section>
 
   <section>
-    <h2>Open issues</h2>
+    <h2>Pull requests</h2>
+    <div id="pulls" class="card-list"></div>
+  </section>
+
+  <section>
+    <h2>Issues</h2>
     <div id="issues" class="card-list"></div>
   </section>
 </div>
 
 <script>
+let DATA = null;
+let repoFilter = 'all';
+let days = 7;
+
 function timeAgo(iso) {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
   const units = [[60, 's'], [60, 'm'], [24, 'h'], [7, 'd'], [4.345, 'w'], [12, 'mo'], [Infinity, 'y']];
@@ -83,59 +135,105 @@ function timeAgo(iso) {
   return `${Math.max(1, Math.round(val))}${units[i][1]} ago`;
 }
 
-fetch('./data.json')
-  .then((r) => r.json())
-  .then((data) => {
-    document.getElementById('updated').textContent = `Updated ${timeAgo(data.generatedAt)}`;
-
-    const commitsEl = document.getElementById('commits');
-    if (!data.commits.length) {
-      commitsEl.innerHTML = '<div class="empty">No recent commits.</div>';
-    } else {
-      commitsEl.innerHTML = data.commits.map((c) => `
-        <a class="card" href="${c.url}" target="_blank" rel="noopener">
-          <div class="card-main">
-            <p class="card-title">${escapeHtml(c.message)}</p>
-            <div class="card-meta">
-              <span class="repo-tag">${c.repo}</span>
-              <span class="sha">${c.sha}</span>
-              <span>${escapeHtml(c.author)}</span>
-            </div>
-          </div>
-          <div class="card-meta">${timeAgo(c.date)}</div>
-        </a>
-      `).join('');
-    }
-
-    const issuesEl = document.getElementById('issues');
-    if (!data.issues.length) {
-      issuesEl.innerHTML = '<div class="empty">No open issues.</div>';
-    } else {
-      issuesEl.innerHTML = data.issues.map((i) => `
-        <a class="card" href="${i.url}" target="_blank" rel="noopener">
-          <div class="card-main">
-            <p class="card-title">#${i.number} ${escapeHtml(i.title)}</p>
-            <div class="card-meta">
-              <span class="repo-tag">${i.repo}</span>
-              ${i.assignees.length ? `<span>${i.assignees.map(escapeHtml).join(', ')}</span>` : '<span>Unassigned</span>'}
-            </div>
-            ${i.labels.length ? `<div class="labels">${i.labels.map((l) => `<span class="pill">${escapeHtml(l)}</span>`).join('')}</div>` : ''}
-          </div>
-          <div class="card-meta">${timeAgo(i.updatedAt)}</div>
-        </a>
-      `).join('');
-    }
-  })
-  .catch((err) => {
-    document.getElementById('updated').textContent = 'Failed to load data.json';
-    console.error(err);
-  });
-
 function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   }[c]));
 }
+
+function withinTimeframe(iso) {
+  if (days === 'all') return true;
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  return new Date(iso).getTime() >= cutoff;
+}
+
+function applyFilters(items, dateField) {
+  return items.filter((i) => (repoFilter === 'all' || i.repo === repoFilter) && withinTimeframe(i[dateField]));
+}
+
+function render() {
+  const commits = applyFilters(DATA.commits, 'date');
+  const pulls = applyFilters(DATA.pulls, 'updatedAt');
+  const issues = applyFilters(DATA.issues, 'updatedAt');
+
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><div class="n">${commits.length}</div><div class="l">Commits</div></div>
+    <div class="stat"><div class="n">${pulls.filter((p) => p.status === 'open').length}</div><div class="l">Open PRs</div></div>
+    <div class="stat"><div class="n">${pulls.filter((p) => p.status === 'merged').length}</div><div class="l">Merged PRs</div></div>
+    <div class="stat"><div class="n">${issues.filter((i) => i.state === 'open').length}</div><div class="l">Open issues</div></div>
+  `;
+
+  const commitsEl = document.getElementById('commits');
+  commitsEl.innerHTML = commits.length ? commits.map((c) => `
+    <a class="card" href="${c.url}" target="_blank" rel="noopener">
+      <div class="card-main">
+        <p class="card-title">${escapeHtml(c.message)}</p>
+        <div class="card-meta">
+          <span class="repo-tag">${c.repo}</span>
+          <span class="sha">${c.sha}</span>
+          <span>${escapeHtml(c.author)}</span>
+        </div>
+      </div>
+      <div class="card-meta">${timeAgo(c.date)}</div>
+    </a>
+  `).join('') : '<div class="empty">No commits in this range.</div>';
+
+  const pullsEl = document.getElementById('pulls');
+  pullsEl.innerHTML = pulls.length ? pulls.map((p) => `
+    <a class="card" href="${p.url}" target="_blank" rel="noopener">
+      <div class="card-main">
+        <p class="card-title">#${p.number} ${escapeHtml(p.title)}</p>
+        <div class="card-meta">
+          <span class="repo-tag">${p.repo}</span>
+          <span class="status ${p.status}">${p.status}</span>
+          <span>${escapeHtml(p.author)}</span>
+        </div>
+      </div>
+      <div class="card-meta">${timeAgo(p.updatedAt)}</div>
+    </a>
+  `).join('') : '<div class="empty">No pull requests in this range.</div>';
+
+  const issuesEl = document.getElementById('issues');
+  issuesEl.innerHTML = issues.length ? issues.map((i) => `
+    <a class="card" href="${i.url}" target="_blank" rel="noopener">
+      <div class="card-main">
+        <p class="card-title">#${i.number} ${escapeHtml(i.title)}</p>
+        <div class="card-meta">
+          <span class="repo-tag">${i.repo}</span>
+          <span class="status ${i.state}">${i.state}</span>
+          ${i.assignees.length ? `<span>${i.assignees.map(escapeHtml).join(', ')}</span>` : '<span>Unassigned</span>'}
+        </div>
+        ${i.labels.length ? `<div class="labels">${i.labels.map((l) => `<span class="pill">${escapeHtml(l)}</span>`).join('')}</div>` : ''}
+      </div>
+      <div class="card-meta">${timeAgo(i.updatedAt)}</div>
+    </a>
+  `).join('') : '<div class="empty">No issues in this range.</div>';
+}
+
+document.getElementById('repo-filter').addEventListener('click', (e) => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  repoFilter = btn.dataset.repo;
+  document.querySelectorAll('#repo-filter button').forEach((b) => b.classList.toggle('active', b === btn));
+  render();
+});
+
+document.getElementById('timeframe').addEventListener('change', (e) => {
+  days = e.target.value === 'all' ? 'all' : Number(e.target.value);
+  render();
+});
+
+fetch('./data.json')
+  .then((r) => r.json())
+  .then((data) => {
+    DATA = data;
+    document.getElementById('updated').textContent = `Updated ${timeAgo(data.generatedAt)}`;
+    render();
+  })
+  .catch((err) => {
+    document.getElementById('updated').textContent = 'Failed to load data.json';
+    console.error(err);
+  });
 </script>
 </body>
 </html>
