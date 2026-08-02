@@ -30,6 +30,8 @@
   header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1.5rem; }
   h1 { font-size: 22px; font-weight: 600; margin: 0; }
   #updated { font-size: 13px; color: var(--text-muted); }
+  a.nav-link { font-size: 13px; color: var(--accent); text-decoration: none; }
+  a.nav-link:hover { text-decoration: underline; }
 
   .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 1.5rem; }
   .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 0.85rem 1rem; }
@@ -90,7 +92,10 @@
 <div class="wrap">
   <header>
     <h1>Willett Brands Dashboard</h1>
-    <span id="updated"></span>
+    <div style="display:flex; align-items:center; gap:14px;">
+      <a class="nav-link" href="./docs.html">Documentation</a>
+      <span id="updated"></span>
+    </div>
   </header>
 
   <div class="stats" id="stats"></div>
