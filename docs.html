@@ -41,13 +41,21 @@
   .layout { display: grid; grid-template-columns: 260px 1fr; gap: 20px; align-items: start; }
   @media (max-width: 720px) { .layout { grid-template-columns: 1fr; } }
 
+  .search {
+    width: 100%; font-size: 13px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); font-family: inherit; margin-bottom: 8px;
+  }
+
   .doc-list { display: flex; flex-direction: column; gap: 4px; }
   .doc-list button {
-    text-align: left; border: none; background: transparent; padding: 8px 10px; border-radius: 8px;
-    font-size: 13px; color: var(--text); cursor: pointer; font-family: inherit;
+    display: block; width: 100%; text-align: left; border: none; background: transparent;
+    padding: 8px 10px; border-radius: 8px; cursor: pointer; font-family: inherit;
   }
   .doc-list button:hover { background: var(--surface); }
-  .doc-list button.active { background: var(--label-bg); color: var(--label-text); font-weight: 500; }
+  .doc-list button.active { background: var(--label-bg); }
+  .doc-title { font-size: 13px; color: var(--text); }
+  .doc-list button.active .doc-title { color: var(--label-text); font-weight: 500; }
+  .doc-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 
   .doc-content { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.5rem 2rem; min-height: 200px; }
   .doc-content h1 { font-size: 20px; }
@@ -72,7 +80,10 @@
 
   <div class="tabs" id="tabs"></div>
   <div class="layout">
-    <div class="doc-list" id="doc-list"></div>
+    <div>
+      <input type="text" class="search" id="search" placeholder="Search docs...">
+      <div class="doc-list" id="doc-list"></div>
+    </div>
     <div class="doc-content" id="doc-content"><div class="empty">Select a document.</div></div>
   </div>
 </div>
@@ -81,6 +92,56 @@
 let DOCS = [];
 let activeRepo = null;
 let activePath = null;
+let query = '';
+
+function timeAgo(iso) {
+  if (!iso) return '';
+  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+  const units = [[60, 's'], [60, 'm'], [24, 'h'], [7, 'd'], [4.345, 'w'], [12, 'mo'], [Infinity, 'y']];
+  let val = diff, i = 0;
+  for (const [span] of units) {
+    if (val < span) break;
+    val /= span;
+    i++;
+  }
+  return `${Math.max(1, Math.round(val))}${units[i][1]} ago`;
+}
+
+// Subsequence fuzzy match: every query char must appear in order in the
+// target (not necessarily adjacent). Score rewards consecutive runs, so
+// "pts" scores higher against "Points System" than against "Player Tools".
+// Returns -1 when the query isn't a subsequence at all (no match).
+function fuzzyScore(q, target) {
+  if (!q) return 0;
+  const t = target.toLowerCase();
+  let qi = 0, score = 0, streak = 0;
+  for (let ti = 0; ti < t.length && qi < q.length; ti++) {
+    if (t[ti] === q[qi]) {
+      qi++;
+      streak++;
+      score += streak;
+    } else {
+      streak = 0;
+    }
+  }
+  return qi === q.length ? score : -1;
+}
+
+function matchDocs(docs) {
+  if (!query) return docs;
+
+  const q = query.toLowerCase();
+  return docs
+    .map((d) => {
+      const titleScore = fuzzyScore(q, d.title);
+      const contentScore = fuzzyScore(q, d.content);
+      const score = (titleScore >= 0 ? titleScore * 100 : 0) + (contentScore >= 0 ? contentScore : 0);
+      return { doc: d, score, matched: titleScore >= 0 || contentScore >= 0 };
+    })
+    .filter((r) => r.matched)
+    .sort((a, b) => b.score - a.score)
+    .map((r) => r.doc);
+}
 
 function renderTabs() {
   const repos = ['kaydence', 'engagement-hub'];
@@ -91,16 +152,19 @@ function renderTabs() {
 }
 
 function renderList() {
-  const docs = DOCS.filter((d) => d.repo === activeRepo);
+  const docs = matchDocs(DOCS.filter((d) => d.repo === activeRepo));
   const listEl = document.getElementById('doc-list');
 
   if (!docs.length) {
-    listEl.innerHTML = '<div class="empty">No docs yet.</div>';
+    listEl.innerHTML = `<div class="empty">${query ? 'No matching docs.' : 'No docs yet.'}</div>`;
     return;
   }
 
   listEl.innerHTML = docs.map((d) => `
-    <button data-path="${d.path}" class="${d.path === activePath ? 'active' : ''}">${escapeHtml(d.title)}</button>
+    <button data-path="${d.path}" class="${d.path === activePath ? 'active' : ''}">
+      <div class="doc-title">${escapeHtml(d.title)}</div>
+      <div class="doc-meta">${d.updatedAt ? `Updated ${timeAgo(d.updatedAt)}${d.updatedBy ? ' by ' + escapeHtml(d.updatedBy) : ''}` : ''}</div>
+    </button>
   `).join('');
 }
 
@@ -115,13 +179,16 @@ function renderContent() {
 
   el.innerHTML = `
     ${marked.parse(doc.content)}
-    <div class="doc-source"><a href="${doc.url}" target="_blank" rel="noopener">View source on GitHub</a></div>
+    <div class="doc-source">
+      ${doc.updatedAt ? `Last updated ${timeAgo(doc.updatedAt)}${doc.updatedBy ? ' by ' + escapeHtml(doc.updatedBy) : ''} &middot; ` : ''}
+      <a href="${doc.url}" target="_blank" rel="noopener">View source on GitHub</a>
+    </div>
   `;
 }
 
 function selectRepo(repo) {
   activeRepo = repo;
-  const docs = DOCS.filter((d) => d.repo === repo);
+  const docs = matchDocs(DOCS.filter((d) => d.repo === repo));
   activePath = docs[0]?.path ?? null;
   renderTabs();
   renderList();
@@ -148,6 +215,18 @@ document.getElementById('tabs').addEventListener('click', (e) => {
 document.getElementById('doc-list').addEventListener('click', (e) => {
   const btn = e.target.closest('button');
   if (btn) selectDoc(btn.dataset.path);
+});
+
+document.getElementById('search').addEventListener('input', (e) => {
+  query = e.target.value.trim();
+  renderList();
+  // Auto-select the top match so the content pane stays useful while typing.
+  const docs = matchDocs(DOCS.filter((d) => d.repo === activeRepo));
+  if (docs.length && !docs.some((d) => d.path === activePath)) {
+    activePath = docs[0].path;
+    renderContent();
+    renderList();
+  }
 });
 
 fetch(`./docs.json?t=${Date.now()}`, { cache: 'no-store' })

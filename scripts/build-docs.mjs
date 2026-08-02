@@ -48,7 +48,10 @@ async function repoDocs(repo) {
 
     return Promise.all(
         files.map(async (f) => {
-            const file = await ghFetch(`/repos/${repo}/contents/${f.path}`);
+            const [file, commits] = await Promise.all([
+                ghFetch(`/repos/${repo}/contents/${f.path}`),
+                ghFetch(`/repos/${repo}/commits?path=${encodeURIComponent(f.path)}&per_page=1`),
+            ]);
             const content = Buffer.from(file.content, 'base64').toString('utf-8');
 
             return {
@@ -57,6 +60,8 @@ async function repoDocs(repo) {
                 path: f.path,
                 title: titleFromContent(content, f.name),
                 content,
+                updatedAt: commits?.[0]?.commit?.author?.date ?? null,
+                updatedBy: commits?.[0]?.author?.login ?? commits?.[0]?.commit?.author?.name ?? null,
                 url: `https://github.com/${repo}/blob/main/${f.path}`,
             };
         })
