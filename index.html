@@ -152,9 +152,9 @@ function applyFilters(items, dateField) {
 }
 
 function render() {
-  const commits = applyFilters(DATA.commits, 'date');
-  const pulls = applyFilters(DATA.pulls, 'updatedAt');
-  const issues = applyFilters(DATA.issues, 'updatedAt');
+  const commits = applyFilters(DATA.commits ?? [], 'date');
+  const pulls = applyFilters(DATA.pulls ?? [], 'updatedAt');
+  const issues = applyFilters(DATA.issues ?? [], 'updatedAt');
 
   document.getElementById('stats').innerHTML = `
     <div class="stat"><div class="n">${commits.length}</div><div class="l">Commits</div></div>
@@ -223,7 +223,7 @@ document.getElementById('timeframe').addEventListener('change', (e) => {
   render();
 });
 
-fetch('./data.json')
+fetch(`./data.json?t=${Date.now()}`, { cache: 'no-store' })
   .then((r) => r.json())
   .then((data) => {
     DATA = data;
